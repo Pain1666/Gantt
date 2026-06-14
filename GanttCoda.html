@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gantt Chart — Coda Sync</title>
+<meta name="description" content="Interactive Gantt chart that syncs live data from a Coda table via the Coda REST API.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap">
+<style>
+*, *::before, *::after {
+  box-sizing: border-box; margin: 0; padding: 0;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+:root {
+  --accent:   #5b6cf8;
+  --accent-h: #4a5ae8;
+  --green:    #22c55e;
+  --red:      #ef4444;
+  --amber:    #f59e0b;
+  --bg:       #ffffff;
+  --surface:  #f7f7f8;
+  --border:   #e4e4e7;
+  --border-s: #d0d0d6;
+  --text:     #18181b;
+  --muted:    #71717a;
+  --faint:    #a1a1aa;
+  --drawer-w: 480px;
+  --drawer-bg: #fafafa;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── TOP BAR ── */
+#topbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 0 18px;
+  gap: 10px;
+}
+.header-left h1 {
+  font-size: 11px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted);
+}
+.header-left .sub {
+  font-size: 22px; font-weight: 200; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text); margin-top: 2px;
+}
+.header-right-group { display: flex; align-items: center; gap: 18px; }
+.header-metas { display: flex; gap: 18px; }
+.hm { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.hm .lbl { font-size: 11px; letter-spacing: 0.06em; font-weight: 300; color: var(--faint); }
+.hm .val { font-size: 12px; font-weight: 400; }
+
+/* sync badge */
+.sync-badge {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--muted); white-space: nowrap;
+}
+.sync-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--faint); flex-shrink: 0;
+  transition: background 0.3s;
+}
+.sync-dot.ok  { background: var(--green); }
+.sync-dot.err { background: var(--red);   }
+.sync-dot.loading {
+  background: var(--amber);
+  animation: pulse-dot 0.9s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%,100% { opacity: 1; } 50% { opacity: 0.3; }
+}
+
+/* ── TOOLBAR ── */
+#toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px 6px 18px;
+  border-bottom: 1.5px solid var(--text);
+}
+.legend { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; flex: 1; }
+.leg-ttl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); }
+.leg-i   { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+.leg-sw  { width: 28px; height: 10px; flex-shrink: 0; border-radius: 2px; }
+.leg-today-sw { width: 2px; height: 12px; background: #cc3322 !important; flex-shrink: 0; }
+
+.toolbar-right { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.zoom-group { display: flex; align-items: center; gap: 6px; }
+.zoom-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); min-width: 36px; text-align: right; }
+.zoom-btn {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-size: 16px; font-weight: 300;
+  width: 26px; height: 26px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; user-select: none; transition: background 0.1s;
+}
+.zoom-btn:hover { background: var(--border); }
+.zoom-btn:active { background: var(--border-s); }
+.btn-reset {
+  background: var(--text); color: #fff; border: none;
+  font-family: 'Inter', sans-serif; font-size: 10px;
+  font-weight: 400; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 5px 10px; cursor: pointer; height: 26px; flex-shrink: 0;
+}
+.btn-reset:hover { background: #333; }
+.btn-print {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border);
+  font-family: 'Inter', sans-serif; font-size: 10px;
+  font-weight: 300; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 5px 10px; cursor: pointer; height: 26px; flex-shrink: 0;
+}
+.btn-print:hover { background: var(--surface); }
+.btn-refresh {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border);
+  font-family: 'Inter', sans-serif; font-size: 12px;
+  width: 26px; height: 26px; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, transform 0.3s;
+}
+.btn-refresh:hover { background: var(--surface); }
+.btn-refresh.spinning { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn-settings {
+  background: var(--accent); color: #fff; border: none;
+  font-family: 'Inter', sans-serif; font-size: 14px;
+  width: 26px; height: 26px; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+  position: relative;
+}
+.btn-settings:hover { background: var(--accent-h); }
+.btn-settings .conn-dot {
+  position: absolute; top: -3px; right: -3px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--faint); border: 1.5px solid var(--bg);
+  transition: background 0.3s;
+}
+.btn-settings .conn-dot.ok  { background: var(--green); }
+.btn-settings .conn-dot.err { background: var(--red);   }
+
+/* ── ERROR BANNER ── */
+#error-banner {
+  flex-shrink: 0;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  font-size: 11px;
+  color: #991b1b;
+}
+#error-banner.visible { display: flex; }
+#error-banner button {
+  margin-left: auto; background: none; border: none;
+  cursor: pointer; font-size: 14px; color: #991b1b; line-height: 1;
+}
+
+/* ── MAIN AREA ── */
+#main {
+  flex: 1; display: flex; overflow: hidden; min-height: 0; position: relative;
+}
+
+/* ── EMPTY STATE ── */
+#empty-state {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px; z-index: 20;
+  background: var(--bg);
+}
+#empty-state.hidden { display: none; }
+.empty-icon {
+  font-size: 48px; opacity: 0.18;
+  animation: float 3s ease-in-out infinite;
+}
+@keyframes float {
+  0%,100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+.empty-title {
+  font-size: 18px; font-weight: 300;
+  letter-spacing: 0.06em; color: var(--text);
+}
+.empty-sub {
+  font-size: 12px; color: var(--muted); max-width: 320px;
+  text-align: center; line-height: 1.7;
+}
+.btn-connect {
+  margin-top: 4px;
+  background: var(--accent); color: #fff; border: none;
+  font-family: 'Inter', sans-serif; font-size: 12px;
+  font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 10px 24px; cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.btn-connect:hover { background: var(--accent-h); transform: translateY(-1px); }
+.btn-connect:active { transform: translateY(0); }
+
+/* ── LOADING OVERLAY ── */
+#loading-overlay {
+  position: absolute; inset: 0;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.82); z-index: 15; backdrop-filter: blur(2px);
+}
+#loading-overlay.visible { display: flex; }
+.spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* ── LEFT FIXED PANEL ── */
+#left-panel {
+  flex-shrink: 0; width: 700px; overflow: hidden;
+  display: flex; flex-direction: column;
+  border-right: 1.5px solid var(--border-s);
+}
+#left-header {
+  flex-shrink: 0; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+#left-header table {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+}
+#left-header th {
+  font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text); padding: 6px 6px;
+  white-space: nowrap; overflow: hidden; text-align: left;
+  border-right: 1px solid var(--border);
+}
+#left-body { flex: 1; overflow-y: hidden; }
+#left-body table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+
+/* ── RIGHT SCROLLABLE PANEL ── */
+#right-panel {
+  flex: 1; overflow: hidden; display: flex; flex-direction: column;
+  min-width: 0; cursor: grab; user-select: none;
+}
+#right-panel.grabbing { cursor: grabbing; }
+#right-header {
+  flex-shrink: 0; overflow: hidden;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+#month-canvas-wrap { position: relative; height: 24px; }
+.month-cell {
+  position: absolute; top: 0; bottom: 0;
+  display: flex; align-items: center; padding-left: 4px;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text); overflow: hidden; white-space: nowrap;
+  border-left: 1px solid var(--border); background: var(--surface) !important;
+}
+.month-cell.year-start { border-left: 1.5px solid var(--border-s); }
+.month-cell .yr { color: var(--muted); margin-right: 3px; font-size: 8px; }
+
+#right-scroll { flex: 1; overflow: hidden; min-height: 0; }
+#bars-canvas-wrap { position: relative; }
+
+/* ── ROW STYLES ── */
+.lrow {
+  display: flex; align-items: center;
+  border-bottom: 1px solid #f0f0f0; overflow: hidden;
+}
+.lrow.ph { background: var(--surface) !important; border-bottom: 1px solid var(--border); }
+.lrow.ph .ph-label {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 8px;
+}
+.l-color { flex-shrink: 0; width: 5px; height: 100%; }
+.l-num   { flex-shrink: 0; width: 24px; font-size: 10px; color: var(--faint); text-align: right; padding-right: 4px; }
+.l-name  { flex: 1; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
+.l-start { flex-shrink: 0; width: 75px; font-size: 10px; color: var(--muted); text-align: center; }
+.l-end   { flex-shrink: 0; width: 75px; font-size: 10px; color: var(--muted); text-align: center; }
+.l-days  { flex-shrink: 0; width: 44px; font-size: 10px; color: var(--muted); text-align: right; padding-right: 4px; }
+.l-pct   { flex-shrink: 0; width: 44px; font-size: 10px; text-align: right; padding-right: 4px; }
+.l-stat  { flex-shrink: 0; width: 100px; font-size: 10px; text-align: center; color: var(--muted); }
+
+/* ── CANVAS ROWS ── */
+.brow {
+  position: absolute; left: 0; right: 0;
+  border-bottom: 1px solid #f0f0f0; overflow: hidden;
+}
+.brow.ph { background: var(--surface) !important; border-bottom: 1px solid var(--border); }
+.g-line { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 1; }
+.g-month { width: 1px; background: #ebebeb !important; }
+.g-year  { width: 1px; background: #d4d4d8 !important; }
+.g-today { width: 2px; background: #cc3322 !important; z-index: 5; }
+
+.bar-wrap { position: absolute; top: 50%; transform: translateY(-50%); height: 14px; z-index: 3; overflow: visible; }
+.bar-bg   { position: absolute; inset: 0; border-radius: 1px; }
+.bar-prog { position: absolute; top: 0; left: 0; height: 100%; z-index: 2; border-radius: 1px; }
+.bar-lbl  {
+  position: absolute; left: calc(100% + 4px); top: 50%; transform: translateY(-50%);
+  white-space: nowrap; font-size: 10px; color: var(--text); z-index: 4; pointer-events: none;
+}
+.bar-lbl .bl-code { font-weight: 600; }
+.bar-lbl .bl-pct  { margin-left: 2px; }
+.bar-lbl .bl-resp { color: var(--faint); margin-left: 3px; }
+.phase-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 5px; opacity: 0.35; z-index: 2; border-radius: 1px; }
+
+/* ── SCROLLBAR ── */
+#right-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+#right-scroll::-webkit-scrollbar-track { background: var(--surface); }
+#right-scroll::-webkit-scrollbar-thumb { background: var(--border-s); border-radius: 3px; }
+#left-body::-webkit-scrollbar { display: none; }
+
+/* ────────────────────────────────────────────────
+   SETTINGS DRAWER
+──────────────────────────────────────────────── */
+#drawer-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.25);
+  z-index: 100; opacity: 0; pointer-events: none;
+  transition: opacity 0.25s;
+  backdrop-filter: blur(2px);
+}
+#drawer-overlay.open { opacity: 1; pointer-events: all; }
+
+#settings-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: var(--drawer-w); max-width: 98vw;
+  background: var(--drawer-bg);
+  border-left: 1px solid var(--border);
+  z-index: 101;
+  display: flex; flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: -8px 0 32px rgba(0,0,0,0.08);
+}
+#settings-drawer.open { transform: translateX(0); }
+
+.drawer-header {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-title {
+  font-size: 14px; font-weight: 600;
+  letter-spacing: 0.04em; color: var(--text);
+}
+.drawer-title span { color: var(--accent); }
+.btn-close-drawer {
+  background: none; border: none; font-size: 20px;
+  cursor: pointer; color: var(--muted); line-height: 1;
+  padding: 2px; transition: color 0.15s;
+}
+.btn-close-drawer:hover { color: var(--text); }
+
+.drawer-body {
+  flex: 1; overflow-y: auto; padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 22px;
+}
+.drawer-body::-webkit-scrollbar { width: 5px; }
+.drawer-body::-webkit-scrollbar-track { background: transparent; }
+.drawer-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.drawer-section-title {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted); margin-bottom: 12px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.field-group { display: flex; flex-direction: column; gap: 14px; }
+.field-row { display: flex; flex-direction: column; gap: 5px; }
+.field-row label {
+  font-size: 11px; font-weight: 500;
+  color: var(--text); letter-spacing: 0.04em;
+}
+.field-row .field-hint {
+  font-size: 10px; color: var(--faint); margin-top: 2px; line-height: 1.5;
+}
+.field-row input, .field-row select {
+  width: 100%;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Inter', sans-serif;
+  font-size: 12px; padding: 8px 10px;
+  outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field-row input:focus, .field-row select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91,108,248,0.12);
+}
+.field-row input[type="password"] { letter-spacing: 0.1em; }
+
+.mapping-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+.mapping-note {
+  font-size: 10px; color: var(--faint);
+  line-height: 1.6; margin-top: -6px;
+  padding: 10px; background: #f0f0ff; border-left: 3px solid var(--accent);
+}
+
+.drawer-footer {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+}
+.btn-save {
+  flex: 1; background: var(--accent); color: #fff; border: none;
+  font-family: 'Inter', sans-serif; font-size: 12px;
+  font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 10px 0; cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.btn-save:hover { background: var(--accent-h); }
+.btn-save:active { transform: scale(0.98); }
+.btn-clear-settings {
+  background: none; border: 1px solid var(--border);
+  font-family: 'Inter', sans-serif; font-size: 11px;
+  color: var(--muted); padding: 10px 14px; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-clear-settings:hover { border-color: var(--red); color: var(--red); }
+.btn-test {
+  background: none; border: 1px solid var(--accent);
+  font-family: 'Inter', sans-serif; font-size: 11px;
+  color: var(--accent); padding: 10px 14px; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap; min-width: 52px;
+}
+.btn-test:hover { background: var(--accent); color: #fff; }
+.btn-test:disabled { opacity: 0.5; cursor: default; }
+
+/* ── PRINT ── */
+@media print {
+  @page { size: A3 landscape; margin: 7mm; }
+  html, body { width: 420mm; height: auto; overflow: visible; }
+  #topbar, #toolbar { padding: 4mm 5mm; }
+  .toolbar-right, .btn-print, .btn-settings, .btn-refresh { display: none !important; }
+  #main { overflow: visible; height: auto; }
+  #left-panel, #right-panel { overflow: visible; }
+  #left-body, #right-scroll { overflow: visible; }
+  #bars-canvas-wrap, #month-canvas-wrap { width: 100% !important; }
+  #drawer-overlay, #settings-drawer { display: none !important; }
+  #empty-state, #loading-overlay { display: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="header-left">
+    <h1>Project Planner — Gantt</h1>
+    <div class="sub" id="project-title">Coda Sync</div>
+  </div>
+  <div class="header-right-group">
+    <div class="header-metas">
+      <div class="hm"><span class="lbl">Start</span><span class="val" id="h-start">—</span></div>
+      <div class="hm"><span class="lbl">End</span><span class="val" id="h-end">—</span></div>
+      <div class="hm"><span class="lbl">Tasks</span><span class="val" id="h-count">—</span></div>
+      <div class="hm"><span class="lbl">Synced</span><span class="val" id="h-synced">—</span></div>
+    </div>
+    <div class="sync-badge">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span id="sync-status-text">Not connected</span>
+    </div>
+  </div>
+</div>
+
+<!-- TOOLBAR -->
+<div id="toolbar">
+  <div class="legend" id="legend-container">
+    <span class="leg-ttl">Disciplines —</span>
+    <span style="font-size:11px;color:var(--faint)">Connect Coda to see legend</span>
+  </div>
+  <div class="toolbar-right">
+    <div class="zoom-group">
+      <span class="zoom-label" id="zoom-label">100%</span>
+      <button class="zoom-btn" id="btn-zoom-out" title="Zoom out (−)">−</button>
+      <button class="zoom-btn" id="btn-zoom-in"  title="Zoom in (+)">+</button>
+      <button class="btn-reset" id="btn-fit" title="Fit to window">Fit</button>
+    </div>
+    <button class="btn-refresh" id="btn-refresh" title="Re-fetch from Coda">↻</button>
+    <button class="btn-print" onclick="window.print()">⬡ Print PDF</button>
+    <button class="btn-settings" id="btn-settings" title="Configure Coda connection">
+      ⚙
+      <span class="conn-dot" id="conn-dot"></span>
+    </button>
+  </div>
+</div>
+
+<!-- ERROR BANNER -->
+<div id="error-banner">
+  <span>⚠️</span>
+  <span id="error-msg">An error occurred.</span>
+  <button onclick="dismissError()" title="Dismiss">✕</button>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- EMPTY STATE -->
+  <div id="empty-state">
+    <div class="empty-icon">📊</div>
+    <div class="empty-title">No data yet</div>
+    <div class="empty-sub">Connect a Coda table to display your project schedule as an interactive Gantt chart.</div>
+    <button class="btn-connect" onclick="openDrawer()">⚙ Connect Coda Table</button>
+  </div>
+
+  <!-- LOADING OVERLAY -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- LEFT FIXED PANEL -->
+  <div id="left-panel">
+    <div id="left-header">
+      <table>
+        <colgroup>
+          <col style="width:5px">
+          <col style="width:24px">
+          <col style="width:1fr"><!-- flex -->
+          <col style="width:75px">
+          <col style="width:75px">
+          <col style="width:44px">
+          <col style="width:44px">
+          <col style="width:100px">
+        </colgroup>
+        <tr>
+          <th style="border-right:none;padding:0"></th>
+          <th>#</th>
+          <th>Description</th>
+          <th class="c">Start</th>
+          <th class="c">End</th>
+          <th class="r">Days</th>
+          <th class="r">%</th>
+          <th class="c">Status</th>
+        </tr>
+      </table>
+    </div>
+    <div id="left-body"></div>
+  </div>
+
+  <!-- RIGHT SCROLLABLE PANEL -->
+  <div id="right-panel">
+    <div id="right-header">
+      <div id="month-canvas-wrap"></div>
+    </div>
+    <div id="right-scroll">
+      <div id="bars-canvas-wrap"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- SETTINGS DRAWER OVERLAY -->
+<div id="drawer-overlay" onclick="closeDrawer()"></div>
+
+<!-- SETTINGS DRAWER -->
+<div id="settings-drawer">
+  <div class="drawer-header">
+    <div class="drawer-title">⚙ Coda <span>Connection</span></div>
+    <button class="btn-close-drawer" onclick="closeDrawer()" title="Close">✕</button>
+  </div>
+  <div class="drawer-body">
+
+    <!-- Connection section -->
+    <div>
+      <div class="drawer-section-title">Connection</div>
+      <div class="field-group">
+        <div class="field-row">
+          <label for="inp-doc-url">Coda Doc URL or Doc ID</label>
+          <input type="text" id="inp-doc-url"
+            placeholder="https://coda.io/d/MyDoc_dXXXXXXXX/... or dXXXXXXXX"
+            oninput="refreshDocIdPreview()">
+          <div class="field-hint">Paste the full URL from your browser, or just the Doc ID (starts with <code>d</code>).</div>
+          <div id="doc-id-preview" style="font-size:11px;margin-top:4px;min-height:16px;"></div>
+        </div>
+        <div class="field-row">
+          <label for="inp-table">Table name or Table ID</label>
+          <input type="text" id="inp-table" placeholder="DB_Activities">
+          <div class="field-hint">Exact table name as it appears in Coda, or the table ID (grid-xxx).</div>
+        </div>
+        <div class="field-row">
+          <label for="inp-token">API Token</label>
+          <input type="password" id="inp-token"
+            placeholder="••••••••••••••••••••••••">
+          <div class="field-hint">Generate at <strong>coda.io/account</strong> → API Settings → New token.</div>
+        </div>
+        <div class="field-row">
+          <label for="inp-project-title">Project title (optional)</label>
+          <input type="text" id="inp-project-title" placeholder="My Project Name">
+          <div class="field-hint">Shown in the header. Leave blank to auto-fill from Coda doc name.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Display Options -->
+    <div>
+      <div class="drawer-section-title">Display Options</div>
+      <div class="field-group">
+        <div class="field-row">
+          <label for="inp-sort-by">Sort Tasks By</label>
+          <select id="inp-sort-by">
+            <option value="original">Original Coda Table Order</option>
+            <option value="startDate">Start Date (Earliest First)</option>
+          </select>
+          <div class="field-hint">Choose how the tasks should be ordered in the Gantt chart.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Column Mapping section -->
+    <div id="mapping-section" style="display:none">
+      <div class="drawer-section-title">Column Mapping</div>
+      <p class="mapping-note">Map each Gantt field to a column in your Coda table. Dates must be in ISO format (YYYY-MM-DD). Completion % must be numeric (0–100).</p>
+      <div class="mapping-grid" id="mapping-grid" style="margin-top:12px"></div>
+    </div>
+
+    <!-- Detected columns info -->
+    <div id="cols-info" style="display:none">
+      <div class="drawer-section-title">Detected Columns</div>
+      <div id="cols-list" style="font-size:11px;color:var(--muted);line-height:1.8"></div>
+    </div>
+
+  </div>
+  <!-- Test connection result -->
+  <div id="test-result" style="display:none;margin:0 24px 0 24px;padding:10px 12px;font-size:11px;line-height:1.6;border-radius:0;"></div>
+  <div class="drawer-footer">
+    <button class="btn-clear-settings" onclick="clearSettings()" title="Reset all settings">Reset</button>
+    <button class="btn-test" id="btn-test" onclick="testConnection()">Test</button>
+    <button class="btn-save" onclick="saveAndFetch()">Save &amp; Refresh</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────
+const STORAGE_KEY  = 'ganttcoda_settings';
+const CODA_API     = 'https://coda.io/apis/v1';
+const MO_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const GANTT_FIELDS = [
+  { key:'item',   label:'Task Code',       hint:'Unique ID / code (e.g. A_CPT_1)' },
+  { key:'desc',   label:'Description',     hint:'Task description / name' },
+  { key:'phase',  label:'Phase / Group',   hint:'Phase header label' },
+  { key:'disc',   label:'Discipline',      hint:'Controls bar colour' },
+  { key:'resp',   label:'Responsible',     hint:'Person / team abbreviation' },
+  { key:'days',   label:'Duration (days)', hint:'Numeric – number of working days' },
+  { key:'pct',    label:'Completion %',    hint:'Numeric 0–100' },
+  { key:'status', label:'Status',          hint:'e.g. Ongoing / Not Started / Done' },
+  { key:'start',  label:'Start Date',      hint:'ISO date YYYY-MM-DD' },
+  { key:'end',    label:'End Date',        hint:'ISO date YYYY-MM-DD' },
+];
+
+// ─────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────
+let settings    = loadSettings();
+let rows        = [];            // mapped gantt rows
+let discColorMap = {};           // discipline → hex color
+let detectedCols = [];           // [{id, name}] from Coda
+let zoom        = 1.0;
+let PRJ_START, PRJ_END, TOTAL_MS;
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+
+const ZOOM_MIN = 0.4, ZOOM_MAX = 8.0, ZOOM_STEP = 0.25;
+
+// ─────────────────────────────────────────────────────────────
+// COLOUR UTILITY — deterministic hue from string
+// ─────────────────────────────────────────────────────────────
+function hashStr(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i);
+  return Math.abs(h);
+}
+const PALETTE_HUES = [210, 28, 145, 265, 15, 185, 340, 48, 300, 90, 230, 60];
+function discColor(discipline) {
+  if (!discColorMap[discipline]) {
+    const idx = hashStr(discipline) % PALETTE_HUES.length;
+    const hue = PALETTE_HUES[idx];
+    discColorMap[discipline] = hslToHex(hue, 52, 48);
+  }
+  return discColorMap[discipline];
+}
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => { const k = (n + h / 30) % 12; const c = l - a * Math.max(Math.min(k-3, 9-k, 1), -1); return Math.round(255*c).toString(16).padStart(2,'0'); };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+function lighten(hex, a) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgb(${Math.round(r+(255-r)*a)},${Math.round(g+(255-g)*a)},${Math.round(b+(255-b)*a)})`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// LOCAL STORAGE
+// ─────────────────────────────────────────────────────────────
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveSettings(s) {
+  settings = s;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+}
+function clearSettings() {
+  if (!confirm('Reset all connection settings?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  settings = {};
+  rows = [];
+  discColorMap = {};
+  applySettingsToForm();
+  showEmptyState(true);
+  updateConnectionBadge('none');
+  setSyncStatus('Not connected', 'none');
+  closeDrawer();
+}
+
+// ─────────────────────────────────────────────────────────────
+// DOC ID EXTRACTION
+// ─────────────────────────────────────────────────────────────
+function extractDocId(input) {
+  input = (input || '').trim();
+
+  // Strategy 1: parse from a full coda.io URL
+  // URL format: https://coda.io/d/{Title}_{docId}/{Page}_{pageId}
+  // The _d prefix indicates the docId follows. The docId is alphanumeric.
+  const urlMatch = input.match(/_d([A-Za-z0-9]+)/);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+
+  // Strategy 2: bare doc ID (user typed it directly)
+  // 10 alphanumeric chars is a typical doc ID length, but we'll accept any alphanumeric string >= 5 chars
+  if (/^[A-Za-z0-9]{5,}$/.test(input)) return input;
+
+  return null;
+}
+
+// Show the parsed doc ID live as the user types
+function refreshDocIdPreview() {
+  const raw     = document.getElementById('inp-doc-url').value;
+  const preview = document.getElementById('doc-id-preview');
+  if (!raw.trim()) { preview.textContent = ''; return; }
+  const id = extractDocId(raw);
+  if (id) {
+    preview.innerHTML = `Extracted Doc ID: <strong>${escHtml(id)}</strong>`;
+    preview.style.color = 'var(--accent)';
+  } else {
+    preview.textContent = 'Could not extract a Doc ID from this URL.';
+    preview.style.color = 'var(--red)';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// CODA API
+// ─────────────────────────────────────────────────────────────
+async function codaGet(path, token) {
+  const res = await fetch(`${CODA_API}${path}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function fetchTableColumns(docId, tableId, token) {
+  const data = await codaGet(`/docs/${docId}/tables/${tableId}/columns?limit=100`, token);
+  return data.items || [];
+}
+
+async function fetchAllRows(docId, tableId, token) {
+  const all = [];
+  let pageToken = null;
+  do {
+    const qs = `?valueFormat=simple&limit=500${pageToken ? '&pageToken='+encodeURIComponent(pageToken) : ''}`;
+    const data = await codaGet(`/docs/${docId}/tables/${tableId}/rows${qs}`, token);
+    all.push(...(data.items || []));
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+  return all;
+}
+
+async function fetchDocInfo(docId, token) {
+  return codaGet(`/docs/${docId}`, token);
+}
+
+// ─────────────────────────────────────────────────────────────
+// MAPPING
+// ─────────────────────────────────────────────────────────────
+function mapRow(codaRow, mapping, columns) {
+  // Build colName → colId map
+  const colById   = {};
+  const colByName = {};
+  columns.forEach(c => { colById[c.id] = c.name; colByName[c.name.toLowerCase()] = c.id; });
+
+  function val(fieldKey) {
+    const mapped = mapping[fieldKey];   // column name or id chosen by user
+    if (!mapped) return undefined;
+    const vals = codaRow.values || {};
+    // Try by name first, then by id
+    const id = colByName[mapped.toLowerCase()] || mapped;
+    const v = vals[id];
+    return v ?? undefined;
+  }
+
+  function date(fieldKey) {
+    const v = val(fieldKey);
+    if (!v) return null;
+    // Coda returns ISO date string or timestamp
+    if (typeof v === 'string') return v.slice(0,10);
+    return null;
+  }
+
+  function num(fieldKey) {
+    const v = val(fieldKey);
+    if (v === undefined || v === null || v === '') return 0;
+    return parseFloat(v) || 0;
+  }
+
+  return {
+    item:   String(val('item')   || codaRow.id || '').trim(),
+    desc:   String(val('desc')   || '').trim(),
+    phase:  String(val('phase')  || 'No Phase').trim(),
+    disc:   String(val('disc')   || 'General').trim(),
+    resp:   String(val('resp')   || '').trim(),
+    days:   num('days'),
+    pct:    Math.min(100, Math.max(0, num('pct'))),
+    status: String(val('status') || '').trim(),
+    start:  date('start'),
+    end:    date('end'),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// FETCH & RENDER PIPELINE
+// ─────────────────────────────────────────────────────────────
+async function fetchAndRender() {
+  const token   = settings.token;
+  const docRaw  = settings.docUrl;
+  const table   = settings.table;
+  const mapping = settings.mapping || {};
+
+  if (!token || !docRaw || !table) {
+    showError('Please configure the Coda connection first.');
+    openDrawer();
+    return;
+  }
+
+  const docId = extractDocId(docRaw);
+  if (!docId) {
+    showError('Could not extract a Doc ID from the URL. Try pasting the full Coda URL, or type just the Doc ID (e.g. dAbCdEfGhI).');
+    openDrawer();
+    return;
+  }
+  // Surface the extracted ID in errors for easier debugging
+  const _docIdForError = docId;
+
+  setLoading(true);
+  setSyncStatus('Fetching…', 'loading');
+
+  try {
+    // Columns (needed for mapping + populating dropdowns)
+    const columns = await fetchTableColumns(docId, table, token);
+    detectedCols = columns;
+
+    // All rows
+    const rawRows = await fetchAllRows(docId, table, token);
+
+    // Map to Gantt format
+    rows = rawRows
+      .map(r => mapRow(r, mapping, columns))
+      .filter(r => r.start && r.end);  // skip rows without dates
+
+    // Guarantee grouping by Phase, then apply sorting
+    rows.forEach((r, i) => r._idx = i);
+    const phaseMin = {};
+    const phaseFirstIdx = {};
+    rows.forEach(r => {
+      const t = new Date(r.start).getTime();
+      if (!(r.phase in phaseMin) || t < phaseMin[r.phase]) phaseMin[r.phase] = t;
+      if (!(r.phase in phaseFirstIdx)) phaseFirstIdx[r.phase] = r._idx;
+    });
+
+    if (settings.sortBy === 'startDate') {
+      rows.sort((a, b) => {
+        const pDiff = phaseMin[a.phase] - phaseMin[b.phase];
+        if (pDiff !== 0) return pDiff;
+        if (a.phase !== b.phase) return a.phase.localeCompare(b.phase);
+        const tDiff = new Date(a.start).getTime() - new Date(b.start).getTime();
+        if (tDiff !== 0) return tDiff;
+        return a._idx - b._idx;
+      });
+    } else {
+      rows.sort((a, b) => {
+        const pDiff = phaseFirstIdx[a.phase] - phaseFirstIdx[b.phase];
+        if (pDiff !== 0) return pDiff;
+        return a._idx - b._idx;
+      });
+    }
+
+    if (rows.length === 0) {
+      setLoading(false);
+      showError('No valid rows found. Make sure the Start Date and End Date columns are mapped correctly.');
+      showEmptyState(true);
+      setSyncStatus('No data', 'err');
+      updateConnectionBadge('err');
+      return;
+    }
+
+    // Update column dropdowns if drawer is open
+    buildMappingUI(columns, mapping);
+    updateColsInfo(columns);
+
+    // Optional: fetch doc name for header
+    if (!settings.projectTitle) {
+      try {
+        const doc = await fetchDocInfo(docId, token);
+        document.getElementById('project-title').textContent = doc.name || 'Gantt';
+      } catch { /* ignore */ }
+    } else {
+      document.getElementById('project-title').textContent = settings.projectTitle;
+    }
+
+    // Compute timeline extents
+    const allDates = rows.flatMap(r => [new Date(r.start), new Date(r.end)]).filter(d => !isNaN(d));
+    if (allDates.length === 0) throw new Error('No valid dates in data.');
+    const minD = new Date(Math.min(...allDates));
+    const maxD = new Date(Math.max(...allDates));
+    // Pad by 1 month on each side
+    PRJ_START = new Date(minD.getFullYear(), minD.getMonth() - 1, 1);
+    PRJ_END   = new Date(maxD.getFullYear(), maxD.getMonth() + 2, 1);
+    TOTAL_MS  = PRJ_END - PRJ_START;
+
+    // Header stats
+    document.getElementById('h-start').textContent = fmtDate(allDates.reduce((a,b)=>a<b?a:b));
+    document.getElementById('h-end').textContent   = fmtDate(allDates.reduce((a,b)=>a>b?a:b));
+    document.getElementById('h-count').textContent = rows.filter(r=>r.desc).length;
+    document.getElementById('h-synced').textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+
+    // Legend
+    buildLegend();
+
+    // Gantt render
+    showEmptyState(false);
+    buildLeftPanel();
+    render();
+    scrollToToday();
+
+    setSyncStatus('Synced', 'ok');
+    updateConnectionBadge('ok');
+    setLoading(false);
+
+  } catch (err) {
+    setLoading(false);
+    setSyncStatus('Error', 'err');
+    updateConnectionBadge('err');
+    const docId2 = extractDocId(settings.docUrl || '');
+    const hint = err.message.includes('does not exist') || err.message.includes('inaccessible')
+      ? ` (Doc ID used: "${docId2 || 'unknown'}") — verify the URL and that your API token has access to this doc.`
+      : '';
+    showError(`Coda API error: ${err.message}${hint}`);
+    if (rows.length === 0) showEmptyState(true);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// GANTT RENDER ENGINE
+// ─────────────────────────────────────────────────────────────
+const ROW_H_PHASE = 26;
+const ROW_H_TASK  = 28;
+
+function pd(s) { return new Date(s + 'T00:00:00'); }
+function frac(d) { return Math.max(0, Math.min(1, (d - PRJ_START) / TOTAL_MS)); }
+
+function buildMonths() {
+  const months = [];
+  let c = new Date(PRJ_START.getFullYear(), PRJ_START.getMonth(), 1);
+  while (c <= PRJ_END) {
+    months.push({ y: c.getFullYear(), m: c.getMonth() });
+    c = new Date(c.getFullYear(), c.getMonth() + 1, 1);
+  }
+  return months;
+}
+
+function buildRenderItems() {
+  const renderItems = [];
+  const phaseExtents = {};
+  let lastPhase = null;
+  let rowNum = 0;
+
+  rows.forEach(r => {
+    if (!phaseExtents[r.phase]) phaseExtents[r.phase] = { s: pd(r.start), e: pd(r.end), disc: r.disc };
+    else {
+      if (pd(r.start) < phaseExtents[r.phase].s) phaseExtents[r.phase].s = pd(r.start);
+      if (pd(r.end)   > phaseExtents[r.phase].e) phaseExtents[r.phase].e = pd(r.end);
+    }
+  });
+
+  rows.forEach(r => {
+    if (r.phase !== lastPhase) {
+      lastPhase = r.phase;
+      renderItems.push({ type: 'phase', phase: r.phase, disc: r.disc });
+    }
+    rowNum++;
+    renderItems.push({ type: 'task', ...r, rowNum });
+  });
+
+  let totalH = 0;
+  renderItems.forEach(it => {
+    it.top = totalH;
+    it.h   = it.type === 'phase' ? ROW_H_PHASE : ROW_H_TASK;
+    totalH += it.h;
+  });
+
+  return { renderItems, phaseExtents, totalHeight: totalH };
+}
+
+let _renderCache = null;
+function getRenderItems() {
+  if (!_renderCache) _renderCache = buildRenderItems();
+  return _renderCache;
+}
+function invalidateCache() { _renderCache = null; }
+
+function buildLeftPanel() {
+  invalidateCache();
+  const { renderItems } = getRenderItems();
+  const leftBody = document.getElementById('left-body');
+  leftBody.innerHTML = '';
+  const container = document.createElement('div');
+
+  renderItems.forEach(it => {
+    const div = document.createElement('div');
+    div.className = 'lrow ' + (it.type === 'phase' ? 'ph' : '');
+    div.style.height = it.h + 'px';
+
+    if (it.type === 'phase') {
+      const c = discColor(it.disc);
+      div.innerHTML = `<div class="l-color" style="background:${c} !important"></div>
+        <span class="ph-label">${escHtml(it.phase)}</span>`;
+    } else {
+      const c = discColor(it.disc);
+      const isOngoing = /ongoing/i.test(it.status);
+      const dot = isOngoing
+        ? `<span style="color:${c}">●</span>`
+        : `<span style="color:#ccc">○</span>`;
+      div.innerHTML = `
+        <div class="l-color" style="background:${lighten(c,0.55)} !important"></div>
+        <div class="l-num">${it.rowNum}</div>
+        <div class="l-name" title="${escHtml(it.desc)}">${escHtml(it.desc)}</div>
+        <div class="l-start">${escHtml(fmtDate(pd(it.start)))}</div>
+        <div class="l-end">${escHtml(fmtDate(pd(it.end)))}</div>
+        <div class="l-days">${it.days}</div>
+        <div class="l-pct" style="color:${it.pct>0?c:'#bbb'}">${it.pct}%</div>
+        <div class="l-stat">${dot} ${escHtml(it.status || 'Not Started')}</div>`;
+    }
+    container.appendChild(div);
+  });
+
+  leftBody.appendChild(container);
+  leftBody.style.overflowY = 'scroll';
+}
+
+function getCanvasWidth() {
+  return Math.round(document.getElementById('right-panel').clientWidth * zoom);
+}
+
+function render() {
+  if (!PRJ_START || rows.length === 0) return;
+  const { renderItems, phaseExtents, totalHeight } = getRenderItems();
+  const months = buildMonths();
+  const W = getCanvasWidth();
+
+  const monthWrap  = document.getElementById('month-canvas-wrap');
+  const barsWrap   = document.getElementById('bars-canvas-wrap');
+  const rightHeader = document.getElementById('right-header');
+
+  // month header
+  monthWrap.style.width = W + 'px';
+  monthWrap.innerHTML = '';
+  let prevY = null;
+  months.forEach(mo => {
+    const s = new Date(mo.y, mo.m, 1);
+    const e = new Date(mo.y, mo.m + 1, 1);
+    const l = frac(s) * W, r = frac(e) * W;
+    const w = Math.max(0, Math.min(r, W) - Math.max(l, 0));
+    if (w < 1) return;
+    const cell = document.createElement('div');
+    cell.className = 'month-cell' + (mo.m === 0 ? ' year-start' : '');
+    cell.style.left  = Math.max(0, l) + 'px';
+    cell.style.width = w + 'px';
+    const yrStr = (mo.m === 0 || prevY !== mo.y) ? `<span class="yr">${mo.y}</span>` : '';
+    cell.innerHTML = yrStr + MO_EN[mo.m];
+    monthWrap.appendChild(cell);
+    prevY = mo.y;
+  });
+
+  // bars canvas
+  barsWrap.style.width  = W + 'px';
+  barsWrap.style.height = totalHeight + 'px';
+  barsWrap.innerHTML = '';
+
+  // grid lines
+  months.forEach(mo => {
+    const mDate = new Date(mo.y, mo.m, 1);
+    if (mDate <= PRJ_START) return;
+    const x = frac(mDate) * W;
+    const d = document.createElement('div');
+    d.className = 'g-line ' + (mo.m === 0 ? 'g-year' : 'g-month');
+    d.style.cssText = `left:${x}px;top:0;height:${totalHeight}px;`;
+    barsWrap.appendChild(d);
+  });
+
+  // today line
+  if (TODAY >= PRJ_START && TODAY <= PRJ_END) {
+    const x = frac(TODAY) * W;
+    const t = document.createElement('div');
+    t.className = 'g-line g-today';
+    t.style.cssText = `left:${x}px;top:0;height:${totalHeight}px;`;
+    barsWrap.appendChild(t);
+  }
+
+  // rows
+  renderItems.forEach(it => {
+    const div = document.createElement('div');
+    div.className = 'brow ' + (it.type === 'phase' ? 'ph' : '');
+    div.style.cssText = `top:${it.top}px;height:${it.h}px;`;
+
+    if (it.type === 'phase') {
+      div.style.background = 'var(--surface)';
+      const ph = phaseExtents[it.phase];
+      const c  = discColor(it.disc);
+      const x1 = frac(ph.s) * W, x2 = frac(ph.e) * W;
+      const bar = document.createElement('div');
+      bar.className = 'phase-bar';
+      bar.style.cssText = `left:${x1}px;width:${Math.max(1,x2-x1)}px;background:${c} !important;`;
+      div.appendChild(bar);
+    } else {
+      const c  = discColor(it.disc);
+      const sD = pd(it.start), eD = pd(it.end);
+      const x1 = frac(sD) * W, x2 = frac(eD) * W;
+      const bw = Math.max(2, x2 - x1);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'bar-wrap';
+      wrap.style.cssText = `left:${x1}px;width:${bw}px;`;
+
+      const bg = document.createElement('div');
+      bg.className = 'bar-bg';
+      bg.style.cssText = `background:${lighten(c, 0.38)} !important;`;
+      wrap.appendChild(bg);
+
+      if (it.pct > 0) {
+        const prog = document.createElement('div');
+        prog.className = 'bar-prog';
+        prog.style.cssText = `width:${it.pct}%;background:${c} !important;`;
+        wrap.appendChild(prog);
+      }
+
+      if (zoom > 0.5) {
+        const lbl = document.createElement('div');
+        lbl.className = 'bar-lbl';
+        lbl.innerHTML = `<span class="bl-code" style="color:${c}">${escHtml(it.item)}</span><span class="bl-pct"> ${it.pct}%</span><span class="bl-resp"> ${escHtml(it.resp)}</span>`;
+        wrap.appendChild(lbl);
+      }
+      div.appendChild(wrap);
+    }
+    barsWrap.appendChild(div);
+  });
+
+  document.getElementById('zoom-label').textContent = Math.round(zoom * 100) + '%';
+}
+
+function scrollToToday() {
+  if (!PRJ_START) return;
+  setTimeout(() => {
+    const W = getCanvasWidth();
+    const rightPanel = document.getElementById('right-panel');
+    const rightScroll = document.getElementById('right-scroll');
+    const rightHeader = document.getElementById('right-header');
+    const panelW = rightPanel.clientWidth;
+    const todayX = frac(TODAY) * W;
+    rightScroll.scrollLeft = Math.max(0, todayX - panelW * 0.35);
+    rightHeader.scrollLeft = rightScroll.scrollLeft;
+  }, 50);
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEGEND
+// ─────────────────────────────────────────────────────────────
+function buildLegend() {
+  const disciplines = [...new Set(rows.map(r => r.disc))];
+  const container = document.getElementById('legend-container');
+  container.innerHTML = '<span class="leg-ttl">Disciplines —</span>';
+  disciplines.forEach(d => {
+    const c = discColor(d);
+    const item = document.createElement('div');
+    item.className = 'leg-i';
+    item.innerHTML = `<div class="leg-sw" style="background:${c}"></div>${escHtml(d)}`;
+    container.appendChild(item);
+  });
+  // today indicator
+  const todayItem = document.createElement('div');
+  todayItem.className = 'leg-i';
+  todayItem.style.marginLeft = '6px';
+  todayItem.innerHTML = `<div class="leg-today-sw"></div>Today`;
+  container.appendChild(todayItem);
+}
+
+// ─────────────────────────────────────────────────────────────
+// ZOOM
+// ─────────────────────────────────────────────────────────────
+function setZoom(z, pivotX) {
+  if (!PRJ_START) return;
+  const rightScroll = document.getElementById('right-scroll');
+  const rightHeader = document.getElementById('right-header');
+  const scrollBefore = rightScroll.scrollLeft;
+  const oldW = getCanvasWidth();
+  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+  render();
+  const newW = getCanvasWidth();
+  if (pivotX !== undefined && oldW > 0) {
+    const f_ = (scrollBefore + pivotX) / oldW;
+    rightScroll.scrollLeft = f_ * newW - pivotX;
+  } else {
+    if (oldW > 0) rightScroll.scrollLeft = (scrollBefore / oldW) * newW;
+  }
+  rightHeader.scrollLeft = rightScroll.scrollLeft;
+}
+
+document.getElementById('btn-zoom-in').addEventListener('click',  () => setZoom(zoom + ZOOM_STEP));
+document.getElementById('btn-zoom-out').addEventListener('click', () => setZoom(zoom - ZOOM_STEP));
+document.getElementById('btn-fit').addEventListener('click', () => {
+  zoom = 1.0; render();
+  document.getElementById('right-scroll').scrollLeft = 0;
+  document.getElementById('right-header').scrollLeft = 0;
+});
+
+// ─────────────────────────────────────────────────────────────
+// WHEEL ZOOM
+// ─────────────────────────────────────────────────────────────
+const rightPanel = document.getElementById('right-panel');
+rightPanel.addEventListener('wheel', e => {
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    const rect = rightPanel.getBoundingClientRect();
+    const pivotX = e.clientX - rect.left;
+    setZoom(zoom + (e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP), pivotX);
+  }
+}, { passive: false });
+
+// ─────────────────────────────────────────────────────────────
+// PINCH ZOOM
+// ─────────────────────────────────────────────────────────────
+let lastPinchDist = null;
+rightPanel.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastPinchDist = Math.sqrt(dx*dx + dy*dy);
+  }
+}, { passive: true });
+rightPanel.addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && lastPinchDist) {
+    e.preventDefault();
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const delta = (dist - lastPinchDist) / 200;
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rightPanel.getBoundingClientRect().left;
+    setZoom(zoom + delta, midX);
+    lastPinchDist = dist;
+  }
+}, { passive: false });
+rightPanel.addEventListener('touchend', () => { lastPinchDist = null; });
+
+// ─────────────────────────────────────────────────────────────
+// PAN (drag)
+// ─────────────────────────────────────────────────────────────
+let isDragging = false, dragStartX = 0, dragStartScrollL = 0;
+const rightScroll = document.getElementById('right-scroll');
+const rightHeader = document.getElementById('right-header');
+const leftBody    = document.getElementById('left-body');
+
+rightPanel.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  isDragging = true; dragStartX = e.clientX; dragStartScrollL = rightScroll.scrollLeft;
+  rightPanel.classList.add('grabbing');
+});
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = e.clientX - dragStartX;
+  rightScroll.scrollLeft = dragStartScrollL - dx;
+  rightHeader.scrollLeft = rightScroll.scrollLeft;
+  leftBody.scrollTop = rightScroll.scrollTop;
+});
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  rightPanel.classList.remove('grabbing');
+});
+
+// ─────────────────────────────────────────────────────────────
+// VERTICAL SCROLL SYNC
+// ─────────────────────────────────────────────────────────────
+rightScroll.addEventListener('scroll', () => {
+  leftBody.scrollTop  = rightScroll.scrollTop;
+  rightHeader.scrollLeft = rightScroll.scrollLeft;
+});
+leftBody.addEventListener('scroll', () => {
+  rightScroll.scrollTop = leftBody.scrollTop;
+});
+
+// ─────────────────────────────────────────────────────────────
+// KEYBOARD SHORTCUTS
+// ─────────────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === '=' || e.key === '+') setZoom(zoom + ZOOM_STEP);
+  if (e.key === '-' || e.key === '_') setZoom(zoom - ZOOM_STEP);
+  if (e.key === '0') { zoom = 1; render(); }
+  if (e.key === 'Escape') closeDrawer();
+});
+
+// ─────────────────────────────────────────────────────────────
+// RESIZE
+// ─────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => render());
+
+// ─────────────────────────────────────────────────────────────
+// REFRESH BUTTON
+// ─────────────────────────────────────────────────────────────
+document.getElementById('btn-refresh').addEventListener('click', () => {
+  invalidateCache();
+  discColorMap = {};
+  fetchAndRender();
+});
+
+// ─────────────────────────────────────────────────────────────
+// SETTINGS DRAWER
+// ─────────────────────────────────────────────────────────────
+function openDrawer() {
+  applySettingsToForm();
+  document.getElementById('settings-drawer').classList.add('open');
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeDrawer() {
+  document.getElementById('settings-drawer').classList.remove('open');
+  document.getElementById('drawer-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+document.getElementById('btn-settings').addEventListener('click', openDrawer);
+
+function applySettingsToForm() {
+  document.getElementById('inp-doc-url').value        = settings.docUrl        || '';
+  document.getElementById('inp-table').value          = settings.table         || '';
+  document.getElementById('inp-token').value          = settings.token         || '';
+  document.getElementById('inp-project-title').value  = settings.projectTitle  || '';
+  document.getElementById('inp-sort-by').value        = settings.sortBy        || 'original';
+  refreshDocIdPreview();
+  document.getElementById('test-result').style.display = 'none';
+  if (detectedCols.length > 0) {
+    buildMappingUI(detectedCols, settings.mapping || {});
+    updateColsInfo(detectedCols);
+  }
+}
+
+async function testConnection() {
+  const token  = document.getElementById('inp-token').value.trim();
+  const docRaw = document.getElementById('inp-doc-url').value.trim();
+  const table  = document.getElementById('inp-table').value.trim();
+  const result = document.getElementById('test-result');
+  const btn    = document.getElementById('btn-test');
+
+  if (!token || !docRaw) {
+    result.style.display = '';
+    result.style.background = '#fef2f2';
+    result.style.borderLeft = '3px solid var(--red)';
+    result.style.color = '#991b1b';
+    result.textContent = 'Please enter a Doc URL and API token first.';
+    return;
+  }
+
+  const docId = extractDocId(docRaw);
+  if (!docId) {
+    result.style.display = '';
+    result.style.background = '#fef2f2';
+    result.style.borderLeft = '3px solid var(--red)';
+    result.style.color = '#991b1b';
+    result.textContent = 'Could not extract a Doc ID from this URL.';
+    return;
+  }
+
+  btn.textContent = '…';
+  btn.disabled = true;
+  result.style.display = 'none';
+
+  try {
+    // Step 1: verify doc access
+    const doc = await codaGet(`/docs/${docId}`, token);
+    let msg = `✓ Doc found: "${doc.name}" (${docId})`;
+
+    // Step 2: verify table access if provided
+    if (table) {
+      try {
+        const cols = await fetchTableColumns(docId, table, token);
+        msg += `\n✓ Table found with ${cols.length} column(s): ${cols.slice(0,5).map(c=>c.name).join(', ')}${cols.length>5?'…':''}`;
+      } catch (te) {
+        msg += `\n⚠ Doc OK but table error: ${te.message}`;
+      }
+    }
+
+    result.style.display = '';
+    result.style.background = '#f0fdf4';
+    result.style.borderLeft = '3px solid var(--green)';
+    result.style.color = '#166534';
+    result.style.whiteSpace = 'pre-line';
+    result.textContent = msg;
+  } catch (err) {
+    result.style.display = '';
+    result.style.background = '#fef2f2';
+    result.style.borderLeft = '3px solid var(--red)';
+    result.style.color = '#991b1b';
+    result.style.whiteSpace = 'pre-line';
+    result.textContent = `✗ ${err.message}\n\nDoc ID tried: ${docId}\n\nCheck: is the token valid? Does it have access to this doc?`;
+  } finally {
+    btn.textContent = 'Test';
+    btn.disabled = false;
+  }
+}
+
+async function saveAndFetch() {
+  const newSettings = {
+    docUrl:       document.getElementById('inp-doc-url').value.trim(),
+    table:        document.getElementById('inp-table').value.trim(),
+    token:        document.getElementById('inp-token').value.trim(),
+    projectTitle: document.getElementById('inp-project-title').value.trim(),
+    sortBy:       document.getElementById('inp-sort-by').value,
+    mapping:      readMappingFromForm(),
+  };
+  if (!newSettings.docUrl || !newSettings.table || !newSettings.token) {
+    showError('Please fill in the Doc URL, table name, and API token.');
+    return;
+  }
+  saveSettings(newSettings);
+  closeDrawer();
+  invalidateCache();
+  discColorMap = {};
+  await fetchAndRender();
+}
+
+function readMappingFromForm() {
+  const mapping = {};
+  GANTT_FIELDS.forEach(f => {
+    const sel = document.getElementById('map-' + f.key);
+    if (sel) mapping[f.key] = sel.value;
+  });
+  return mapping;
+}
+
+// ─────────────────────────────────────────────────────────────
+// COLUMN MAPPING UI
+// ─────────────────────────────────────────────────────────────
+function buildMappingUI(columns, mapping) {
+  const section = document.getElementById('mapping-section');
+  const grid    = document.getElementById('mapping-grid');
+  section.style.display = '';
+  grid.innerHTML = '';
+
+  const colOptions = columns.map(c => `<option value="${escAttr(c.name)}">${escHtml(c.name)}</option>`).join('');
+  const blankOpt   = `<option value="">— not mapped —</option>`;
+
+  GANTT_FIELDS.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'field-row';
+    row.innerHTML = `
+      <label for="map-${f.key}">${f.label}</label>
+      <select id="map-${f.key}">
+        ${blankOpt}${colOptions}
+      </select>
+      <div class="field-hint">${f.hint}</div>`;
+    grid.appendChild(row);
+
+    const sel = document.getElementById('map-' + f.key);
+    const saved = mapping[f.key] || '';
+    // Try to auto-match by case-insensitive key or label similarity
+    if (saved && columns.find(c => c.name === saved)) {
+      sel.value = saved;
+    } else {
+      // attempt smart auto-detect
+      const guess = autoDetect(f.key, columns);
+      if (guess) sel.value = guess;
+    }
+  });
+}
+
+function autoDetect(fieldKey, columns) {
+  // Heuristic: look for column names that contain the field key or common synonyms
+  const synonyms = {
+    item:   ['item','code','id','task id','task code','ref'],
+    desc:   ['desc','description','name','task','activity','title'],
+    phase:  ['phase','group','category','section'],
+    disc:   ['disc','discipline','type','category','area'],
+    resp:   ['resp','responsible','owner','assignee','resource','assigned'],
+    days:   ['days','duration','gg','giorni','workdays'],
+    pct:    ['pct','percent','completion','progress','%','done'],
+    status: ['status','stato','state'],
+    start:  ['start','begin','inizio','from','data inizio','start date'],
+    end:    ['end','finish','fine','to','data fine','end date'],
+  };
+  const keys = synonyms[fieldKey] || [fieldKey];
+  for (const col of columns) {
+    const name = col.name.toLowerCase();
+    if (keys.some(k => name.includes(k))) return col.name;
+  }
+  return null;
+}
+
+function updateColsInfo(columns) {
+  const info = document.getElementById('cols-info');
+  const list = document.getElementById('cols-list');
+  info.style.display = '';
+  list.innerHTML = columns.map(c =>
+    `<span style="display:inline-block;margin-right:10px;background:var(--surface);padding:2px 6px;border-radius:2px;margin-bottom:4px;border:1px solid var(--border)">${escHtml(c.name)}</span>`
+  ).join('');
+}
+
+// ─────────────────────────────────────────────────────────────
+// UI STATE HELPERS
+// ─────────────────────────────────────────────────────────────
+function showEmptyState(show) {
+  document.getElementById('empty-state').classList.toggle('hidden', !show);
+}
+function setLoading(on) {
+  const overlay  = document.getElementById('loading-overlay');
+  const refresh  = document.getElementById('btn-refresh');
+  overlay.classList.toggle('visible', on);
+  refresh.classList.toggle('spinning', on);
+}
+function showError(msg) {
+  const banner = document.getElementById('error-banner');
+  document.getElementById('error-msg').textContent = msg;
+  banner.classList.add('visible');
+}
+function dismissError() {
+  document.getElementById('error-banner').classList.remove('visible');
+}
+function setSyncStatus(text, state) {
+  document.getElementById('sync-status-text').textContent = text;
+  const dot = document.getElementById('sync-dot');
+  dot.className = 'sync-dot ' + (state === 'none' ? '' : state);
+}
+function updateConnectionBadge(state) {
+  const dot = document.getElementById('conn-dot');
+  dot.className = 'conn-dot ' + (state === 'none' ? '' : state);
+}
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) { return escHtml(s); }
+function fmtDate(d) {
+  if (!(d instanceof Date) || isNaN(d)) return '—';
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────
+(function init() {
+  // Set up scroll areas
+  leftBody.style.overflowY       = 'scroll';
+  rightScroll.style.overflowY    = 'scroll';
+  rightScroll.style.overflowX    = 'scroll';
+  rightHeader.style.overflow     = 'hidden';
+
+  if (settings.token && settings.docUrl && settings.table) {
+    // Auto-fetch on load
+    showEmptyState(false);
+    fetchAndRender();
+  } else {
+    showEmptyState(true);
+  }
+})();
+</script>
+</body>
+</html>
